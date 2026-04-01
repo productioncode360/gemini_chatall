@@ -1,4 +1,3 @@
-// src/services/ai.factory.js
 import { GeminiService } from "./gemini.service.js";
 import { GroqService } from "./groq.service.js";
 import { TavilyService } from "./tavily.service.js";
@@ -6,17 +5,18 @@ import { getCurrentIST } from "../utils/helpers.js";
 import log from "../utils/logger.js";
 
 export const AIFactory = {
-  async getResponse(query, mode = "gemini") {
+  // Yahan attachment = null add kiya
+  async getResponse(query, mode = "gemini", attachment = null) {
     const currentTime = getCurrentIST();
 
     try {
-      log.api("AI_FACTORY", `Mode: ${mode}`);
+      // Log me dikhega ki file aayi hai ya nahi
+      log.api("AI_FACTORY", `Mode: ${mode} | Attachment: ${attachment ? 'Yes' : 'No'}`);
 
       if (mode.toLowerCase() === "tavily+gemini") {
         try {
           log.info("Tavily search started...");
           const searchData = await TavilyService.search(query);
-          
           log.success("Tavily search successful");
           return `🌐 Tavily Web Search Result:\n\n${searchData}\n\n(Source: Real-time web search)`;
         } 
@@ -32,7 +32,10 @@ export const AIFactory = {
       
       else {
         // Default to Gemini
-        return await GeminiService.generate(`Date & Time: ${currentTime}\nUser Query: ${query}\nClear jawab do:`);
+        const prompt = `Date & Time: ${currentTime}\nUser Query: ${query || 'Explain the attached file'}\nClear jawab do:`;
+        
+        // Yahan attachment ko GeminiService me pass kar diya
+        return await GeminiService.generate(prompt, attachment);
       }
     } catch (err) {
       log.error(`AIFactory.getResponse failed for mode: ${mode}`, err);

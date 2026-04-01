@@ -4,8 +4,13 @@ import { ChatController } from "./chat.controller.js";
 
 const router = express.Router();
 
+// Create new chat
 router.post("/create", ChatController.createChat);
+
+// Main chat (with memory support)
 router.post("/search", ChatController.search);
-// router.get("/", ChatController.getAllChats);   // uncomment when needed
+
+// Get specific chat history
+router.get("/:chatId", ChatController.getChat);
 
 export default router;

@@ -1,42 +1,50 @@
-// src/services/gemini.service.js
 import fetch from "node-fetch";
 import { ENV } from "../config/env.js";
 import log from "../utils/logger.js";
 
 export const GeminiService = {
-  async generate(prompt) {
+  // 🟢 attachment की जगह attachments (Array) कर दिया है
+  async generate(prompt, attachments = []) {
     try {
-      if (!ENV.GEMINI_API_KEY) {
-        throw new Error("GEMINI_API_KEY is missing in .env file");
-      }
-
-      const model = ENV.GEMINI_MODEL;   // Fixed model
-
+      const model = ENV.GEMINI_MODEL || "gemini-1.5-pro";   
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${ENV.GEMINI_API_KEY}`;
+
+      const partsArray = [{ text: prompt }];
+
+      // 🟢 Agar array me images aayi hain, to loop chala kar sabko add karo
+      if (attachments && attachments.length > 0) {
+        attachments.forEach(att => {
+          if (att.data) {
+            const base64Data = att.data.split(",")[1];
+            partsArray.push({
+              inlineData: { data: base64Data, mimeType: att.mimeType }
+            });
+          }
+        });
+      }
 
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 65536 }
+          contents: [{ parts: partsArray }],
+          generationConfig: { temperature: 0.7 }
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Gemini HTTP Error: ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Gemini HTTP Error: ${response.status}`);
+      
       const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
 
-      if (data.error) {
-        throw new Error(data.error.message || "Gemini API error");
-      }
+      return {
+        text: data.candidates?.[0]?.content?.parts?.[0]?.text || "No response.",
+        usage: data.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 }
+      };
 
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response from Gemini.";
     } catch (err) {
       log.error("GeminiService failed", err);
-      throw new Error("Gemini API call failed. Check your API key and internet.");
+      throw new Error("Gemini API call failed.");
     }
   }
 };
