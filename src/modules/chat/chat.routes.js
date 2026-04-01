@@ -5,10 +5,7 @@ const router = express.Router();
 
 router.post("/create", ChatController.createChat);
 router.post("/search", ChatController.search);
-
-// 🔴 GET ALL HISTORY ROUTE
-router.get("/history/all", ChatController.getAllChats);
-
+router.get("/history/all", ChatController.getAllChats); // This is strictly placed above :chatId
 router.get("/:chatId", ChatController.getChat);
 
 export default router;

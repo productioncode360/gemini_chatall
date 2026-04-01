@@ -1,4 +1,3 @@
-import log from "../../utils/logger.js";
 import { GeminiService } from "../../services/gemini.service.js";
 import { ChatModel } from "./chat.model.js";
 
@@ -7,58 +6,72 @@ export const ChatService = {
     try {
       let fullPrompt = query || "Explain the attached files.";
       let studyData = null;
-      let isExtractionRequest = false;
+      let isExtReq = false;
 
       if (isStudyMode && attachments && attachments.length > 0) {
-        isExtractionRequest = true;
-        fullPrompt = `
-          You are an expert AI Tutor. The user uploaded images with multiple questions.
-          User's instruction: "${query || 'Answer each question clearly.'}"
-          
-          TASK:
-          1. Extract unique questions.
-          2. Answer each individually.
-          3. Return the result STRICTLY as a JSON array.
-          
-          Format: [{"question": "Q1?", "answer": "Ans1"}, {"question": "Q2?", "answer": "Ans2"}]
-        `;
-      } else {
-        if (chatId) {
-          try {
-            const chat = await ChatModel.getById(chatId);
-            const chatHistory = chat.messages || [];
-            if (chatHistory.length > 0) {
-              fullPrompt = "Context:\n" + chatHistory.map(m => `${m.role}: ${m.content}`).join("\n") + "\n\nNew Query: " + query;
-            }
-          } catch (e) { }
-        }
-      }
+        isExtReq = true;
+        fullPrompt = `You are an AI Tutor. Extract unique questions from images. 
+                     Answer each question individually and clearly. 
+                     STRICTLY return ONLY a valid JSON array in this format: 
+                     [{"question": "Full question text here?", "answer": "Detailed answer here"}]
+                     Do not add any extra text outside the JSON array.`;
 
-      const aiResponse = await GeminiService.generate(fullPrompt, attachments);
-      let resultText = aiResponse.text;
-      const tokenInfo = aiResponse.usage;
-
-      if (isExtractionRequest) {
+      } else if (chatId) {
         try {
-          let cleanJsonStr = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
-          studyData = JSON.parse(cleanJsonStr);
-          if (chatId) await ChatModel.addMessage(chatId, query || "Extract questions", "Extracted questions successfully.");
-        } catch (parseErr) {
-          studyData = [{ question: "Results", answer: resultText }];
+          const chat = await ChatModel.getById(chatId);
+          if (chat.messages && chat.messages.length > 0) {
+            fullPrompt = "Context:\n" + 
+                        chat.messages.map(m => `${m.role}: ${m.content}`).join("\n") + 
+                        "\n\nQuery: " + query;
+          }
+        } catch (e) { 
+          console.error("Context fetch error:", e);
         }
-      } else {
-        if (chatId) await ChatModel.addMessage(chatId, query, resultText, attachments);
       }
 
-      return {
-        success: true,
-        result: resultText,
-        isStudyMode: isExtractionRequest,
-        studyData: studyData,
-        tokens: tokenInfo,
-        chatId: chatId
-      };
+      const aiRes = await GeminiService.generate(fullPrompt, attachments);
+      let resultText = aiRes.text;
 
-    } catch (err) { throw err; }
+      if (isExtReq) {
+        try {
+          // Clean JSON response
+          let cleanJson = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
+          studyData = JSON.parse(cleanJson);
+
+          if (chatId && Array.isArray(studyData) && studyData.length > 0) {
+            // Study data ko dedicated field mein save karo
+            await ChatModel.updateStudyData(chatId, studyData);
+
+            // Message mein bhi notification save kar sakte ho
+            await ChatModel.addMessage(
+              chatId, 
+              query || "Extract questions from image", 
+              `✅ Extracted ${studyData.length} questions successfully.`, 
+              attachments
+            );
+          }
+        } catch (e) {
+          console.error("JSON parse error in study mode:", e);
+          studyData = [{ 
+            question: "Extraction Result", 
+            answer: "Could not parse questions properly. Raw response: " + resultText 
+          }];
+        }
+      } 
+      else if (chatId) {
+        await ChatModel.addMessage(chatId, query, resultText, attachments);
+      }
+
+      return { 
+        success: true, 
+        result: resultText, 
+        isStudyMode: isExtReq, 
+        studyData: studyData, 
+        chatId: chatId 
+      };
+    } catch (err) { 
+      console.error("ChatService error:", err);
+      throw err; 
+    }
   }
 };
